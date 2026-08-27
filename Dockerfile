@@ -1,32 +1,24 @@
-# two-stage: builder compiles static busybox(+busyagent); the final image
-# is FROM scratch with only the rootfs contents. Multi-platform:
+# busyagent image — packaging for the busyagent busybox applet
 #
+# The busybox+agent source tree is pinned via the git submodule ./busybox
+# (update the pointer to release a new image; no remote tarball fetching
+# at build time). Build:
+#
+#   git submodule update --init
 #   docker buildx build --platform linux/amd64,linux/arm64 \
 #     -t lloydzhou/busyagent:latest -t lloydzhou/busybox:latest --push .
 #
-# The busybox+agent source tree is downloaded from the upstream fork at
-# build time (BUSYBOX_REF); no committed .config - the image build pins
-# everything it needs on top of kconfig defaults:
-#
-#   CONFIG_STATIC=y                 zero-dependency binary for scratch
-#   LAST_SUPPORTED_WCHAR=1114111    full CJK codepoint tables (input echo)
-#   UNICODE_WIDE_WCHARS=y           CJK measured at 2 columns
-#   CONFIG_BUSYAGENT=y              pulls our applet + its selects
-#   TC disabled                     alpine headers dropped CBQ constants
+# Config policy: self-contained in this file. make defconfig in the image
+# build plus four pins (CONFIG_STATIC, LAST_SUPPORTED_WCHAR=1114111,
+# UNICODE_WIDE_WCHARS, CONFIG_BUSYAGENT); TC disabled for current alpine
+# headers.
 #
 FROM alpine:3.23 AS build
-# TARGETARCH is injected by buildx. busybox's Makefile derives the CPU
-# subdir from uname, which under qemu emulation reports the host arch -
-# pin ARCH explicitly (same reason docker-library/busybox does).
 ARG TARGETARCH
-ARG BUSYBOX_REPO=https://github.com/lloydzhou/busybox/archive
-# default ref: branch; pin a tag/commit sha for reproducible releases
-ARG BUSYBOX_REF=phase1-single-turn
 
-RUN apk add --no-cache gcc make musl-dev linux-headers findutils curl
+RUN apk add --no-cache gcc make musl-dev linux-headers findutils
 WORKDIR /src
-
-RUN curl -fsSL "$BUSYBOX_REPO/$BUSYBOX_REF.tar.gz" | tar xz --strip-components 1
+COPY busybox/ .
 
 RUN case "$TARGETARCH" in \
         amd64)          export ARCH=x86_64  ;; \
@@ -56,8 +48,7 @@ RUN case "$TARGETARCH" in \
     grep -q '^CONFIG_BUSYAGENT=y' .config && \
     make ARCH="$ARCH" -j"$(nproc)"
 
-# minimal rootfs: binary + every applet link + /etc basics, normalized mtimes.
-# /root/.busyagent is the sessions/history mount point (declared VOLUME below).
+# minimal rootfs: binary + every applet link + /etc basics
 RUN mkdir -p out-rootfs/bin out-rootfs/etc out-rootfs/root/.busyagent; \
     cp busybox out-rootfs/bin/; \
     printf 'root:x:0:0:root:/root:/bin/sh\n' > out-rootfs/etc/passwd; \
