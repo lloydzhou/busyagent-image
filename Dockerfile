@@ -50,7 +50,7 @@ RUN case "$TARGETARCH" in \
 
 # minimal rootfs: binary + every applet link + /etc basics
 RUN mkdir -p out-rootfs/bin out-rootfs/etc out-rootfs/root/.busyagent; \
-    cp busybox out-rootfs/bin/; \
+    strip busybox && cp busybox out-rootfs/bin/; \
     printf 'root:x:0:0:root:/root:/bin/sh\n' > out-rootfs/etc/passwd; \
     printf 'root:x:0:\n' > out-rootfs/etc/group; \
     chroot out-rootfs /bin/busybox --install /bin
@@ -58,7 +58,7 @@ RUN mkdir -p out-rootfs/bin out-rootfs/etc out-rootfs/root/.busyagent; \
 FROM scratch
 COPY --from=build /src/out-rootfs/ /
 
-ENV BB_AGENT_HOME=/root/.busyagent
+ENV BA_HOME=/root/.busyagent
 VOLUME ["/root/.busyagent"]
 WORKDIR /root
 
